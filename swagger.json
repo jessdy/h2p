@@ -1,0 +1,1802 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "HTML to Image API",
+    "description": "A REST API service that converts HTML content to images (PNG/JPEG) with support for mobile/desktop device simulation and custom sizing",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Get API information",
+        "description": "Returns basic information about the API and available endpoints",
+        "operationId": "getApiInfo",
+        "responses": {
+          "200": {
+            "description": "API information retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/render": {
+      "post": {
+        "summary": "Convert HTML to Image",
+        "description": "Converts HTML content to PNG or JPEG image with support for custom sizing, device simulation, and various output formats",
+        "operationId": "renderHtmlToImage",
+        "requestBody": {
+          "description": "HTML content and rendering options. Can be sent as JSON or raw HTML with Content-Type: text/plain",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic HTML to PNG conversion",
+                  "value": {
+                    "html": "<html><body><h1>Hello World</h1></body></html>",
+                    "type": "png"
+                  }
+                },
+                "mobile_device": {
+                  "summary": "Mobile device simulation",
+                  "value": {
+                    "html": "<html><body><h1>Mobile View</h1></body></html>",
+                    "type": "png",
+                    "device": "mobile",
+                    "width": 390,
+                    "height": 844
+                  }
+                },
+                "custom_size": {
+                  "summary": "Custom size with viewport settings",
+                  "value": {
+                    "html": "<html><body><h1>Custom Size</h1></body></html>",
+                    "type": "jpeg",
+                    "width": 1200,
+                    "height": 800,
+                    "viewportWidth": 1200,
+                    "viewportHeight": 800,
+                    "quality": 90
+                  }
+                },
+                "base64_output": {
+                  "summary": "Base64 encoded output",
+                  "value": {
+                    "html": "<html><body><h1>Base64 Output</h1></body></html>",
+                    "type": "png",
+                    "encoding": "base64"
+                  }
+                },
+                "url_output": {
+                  "summary": "Save to local file and return URL",
+                  "value": {
+                    "html": "<html><body style='margin:0;font-family:sans-serif;'><div style='width:600px;height:300px;display:flex;align-items:center;justify-content:center;background:#4A90E2;color:#fff;font-size:32px;'>URL Encoding Test</div></body></html>",
+                    "type": "png",
+                    "encoding": "url",
+                    "outputName": "test-image",
+                    "outputDir": "public/images"
+                  }
+                },
+                "url_custom_path": {
+                  "summary": "Save to custom directory with URL encoding",
+                  "value": {
+                    "html": "<html><body><h1>Custom Path</h1></body></html>",
+                    "type": "jpeg",
+                    "encoding": "url",
+                    "outputName": "banner-home",
+                    "outputDir": "public/custom",
+                    "quality": 95,
+                    "width": 1200,
+                    "height": 400
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image generated successfully",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "PNG image binary data"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "JPEG image binary data"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/Base64Response" },
+                    { "$ref": "#/components/schemas/UrlResponse" }
+                  ]
+                },
+                "description": "JSON responses for base64 or URL encoding"
+              }
+            },
+            "headers": {
+              "Content-Type": {
+                "description": "MIME type of the response",
+                "schema": {
+                  "type": "string",
+                  "enum": ["image/png", "image/jpeg", "application/json"]
+                }
+              },
+              "Content-Disposition": {
+                "description": "Attachment filename for binary responses",
+                "schema": {
+                  "type": "string",
+                  "example": "inline; filename=\"rendered.png\""
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missing_html": {
+                    "summary": "Missing HTML content",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "html (string) is required in request body, or send raw HTML with Content-Type: text/plain"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - rendering failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "render_failed": {
+                    "summary": "Rendering process failed",
+                    "value": {
+                      "error": "render_failed",
+                      "message": "Unable to launch browser process"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crawl/aibase": {
+      "post": {
+        "tags": ["crawl"],
+        "summary": "Crawl AIBase news",
+        "description": "Crawls news articles from AIBase website and optionally saves them to database",
+        "operationId": "crawlAibase",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrawlAibaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Crawl completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlAibaseResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Crawl failed or Supabase not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/merge/audio": {
+      "post": {
+        "tags": ["audio"],
+        "summary": "Merge audio files",
+        "description": "Merges multiple audio files (intro + audio list) with optional background music and generates SRT subtitles",
+        "operationId": "mergeAudio",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeAudioRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Audio merged successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeAudioResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Merge failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/convert/audio-to-video": {
+      "post": {
+        "tags": ["video"],
+        "summary": "Convert audio to video",
+        "description": "Converts audio file to video with waveform visualization, optional background image, and SRT subtitles",
+        "operationId": "convertAudioToVideo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioToVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video conversion completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioToVideoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Conversion failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login/validate": {
+      "post": {
+        "tags": ["login"],
+        "summary": "Validate platform login",
+        "description": "Validates platform login status using cookies. If cookies are empty, automatically loads from local cookie files",
+        "operationId": "validateLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginValidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login validation successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginValidateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginValidateErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login/platforms": {
+      "get": {
+        "tags": ["login"],
+        "summary": "Get supported platforms",
+        "description": "Returns a list of all supported platforms for login validation",
+        "operationId": "getLoginPlatforms",
+        "responses": {
+          "200": {
+            "description": "Platforms retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login/platform/{platform}": {
+      "get": {
+        "tags": ["login"],
+        "summary": "Get platform configuration",
+        "description": "Returns configuration information for a specific platform",
+        "operationId": "getPlatformConfig",
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "required": true,
+            "description": "Platform identifier",
+            "schema": {
+              "type": "string",
+              "enum": ["xiaohongshu", "douyin"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform configuration retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformConfigResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Platform not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/publish/xiaohongshu": {
+      "post": {
+        "tags": ["publish"],
+        "summary": "Publish video to Xiaohongshu",
+        "description": "Publishes a video to Xiaohongshu (Little Red Book) using browser automation. Supports uploading videos from URL or local path, with automatic cookie management.",
+        "operationId": "publishXiaohongshu",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishXiaohongshuRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic video publish",
+                  "value": {
+                    "videoUrl": "http://example.com/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述"
+                  }
+                },
+                "with_tags": {
+                  "summary": "Publish with tags",
+                  "value": {
+                    "videoUrl": "http://example.com/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述",
+                    "tags": ["标签1", "标签2", "标签3"]
+                  }
+                },
+                "with_cookies": {
+                  "summary": "Publish with custom cookies",
+                  "value": {
+                    "videoUrl": "/public/videos/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述",
+                    "tags": ["标签1"],
+                    "cookies": [
+                      {
+                        "name": "cookie_name",
+                        "value": "cookie_value",
+                        "domain": ".xiaohongshu.com",
+                        "path": "/",
+                        "secure": false,
+                        "httpOnly": false,
+                        "session": false
+                      }
+                    ],
+                    "options": {
+                      "headless": false,
+                      "timeout": 120000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video published successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishXiaohongshuResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Publish successful",
+                    "value": {
+                      "success": true,
+                      "message": "视频发布成功",
+                      "title": "我的视频标题",
+                      "description": "这是视频描述",
+                      "tags": ["标签1", "标签2"],
+                      "videoUrl": "http://example.com/video.mp4",
+                      "publishedAt": "2024-01-01T12:00:00.000Z"
+                    }
+                  },
+                  "pending": {
+                    "summary": "Publish pending confirmation",
+                    "value": {
+                      "success": true,
+                      "message": "发布流程已完成，请手动确认发布状态",
+                      "title": "我的视频标题",
+                      "description": "这是视频描述",
+                      "tags": ["标签1"],
+                      "videoUrl": "http://example.com/video.mp4",
+                      "publishedAt": "2024-01-01T12:00:00.000Z",
+                      "note": "建议在小红书创作者中心手动确认发布状态"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missing_video": {
+                    "summary": "Missing video URL",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "videoUrl 参数是必需的"
+                    }
+                  },
+                  "missing_title": {
+                    "summary": "Missing title",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "title 参数是必需的且不能为空"
+                    }
+                  },
+                  "title_too_long": {
+                    "summary": "Title too long",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "标题长度不能超过 20 个字符"
+                    }
+                  },
+                  "description_too_long": {
+                    "summary": "Description too long",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "描述长度不能超过 1000 个字符"
+                    }
+                  },
+                  "file_not_found": {
+                    "summary": "Video file not found",
+                    "value": {
+                      "error": "file_not_found",
+                      "message": "视频文件不存在: /path/to/video.mp4"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed or not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "no_cookies": {
+                    "summary": "No cookies available",
+                    "value": {
+                      "error": "no_cookies",
+                      "message": "Cookies 参数为空且无法从本地文件加载: 未找到 小红书 的本地 cookie 文件"
+                    }
+                  },
+                  "not_logged_in": {
+                    "summary": "Not logged in",
+                    "value": {
+                      "error": "not_logged_in",
+                      "message": "未登录或登录已过期，请先登录"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Publish failed or internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "upload_failed": {
+                    "summary": "Upload element not found",
+                    "value": {
+                      "error": "upload_element_not_found",
+                      "message": "无法找到上传按钮或文件输入框，请检查页面结构",
+                      "debugScreenshot": "/static/temp/debug-1234567890.png"
+                    }
+                  },
+                  "publish_failed": {
+                    "summary": "Publish button not found",
+                    "value": {
+                      "error": "publish_button_not_found",
+                      "message": "无法找到发布按钮，请检查页面状态"
+                    }
+                  },
+                  "internal_error": {
+                    "summary": "Internal server error",
+                    "value": {
+                      "error": "publish_failed",
+                      "message": "发布过程中发生未知错误"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/publish/douyin": {
+      "post": {
+        "tags": ["publish"],
+        "summary": "Publish video to Douyin",
+        "description": "Publishes a video to Douyin (TikTok China) using browser automation. Supports uploading videos from URL or local path, with automatic cookie management.",
+        "operationId": "publishDouyin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishDouyinRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic video publish",
+                  "value": {
+                    "videoUrl": "http://example.com/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述"
+                  }
+                },
+                "with_tags": {
+                  "summary": "Publish with tags",
+                  "value": {
+                    "videoUrl": "http://example.com/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述",
+                    "tags": ["标签1", "标签2", "标签3"]
+                  }
+                },
+                "with_cookies": {
+                  "summary": "Publish with custom cookies",
+                  "value": {
+                    "videoUrl": "/public/videos/video.mp4",
+                    "title": "我的视频标题",
+                    "description": "这是视频描述",
+                    "tags": ["标签1"],
+                    "cookies": [
+                      {
+                        "name": "cookie_name",
+                        "value": "cookie_value",
+                        "domain": ".douyin.com",
+                        "path": "/",
+                        "secure": false,
+                        "httpOnly": false,
+                        "session": false
+                      }
+                    ],
+                    "options": {
+                      "headless": false,
+                      "timeout": 120000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video published successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishDouyinResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Publish successful",
+                    "value": {
+                      "success": true,
+                      "message": "视频发布成功",
+                      "title": "我的视频标题",
+                      "description": "这是视频描述",
+                      "tags": ["标签1", "标签2"],
+                      "videoUrl": "http://example.com/video.mp4",
+                      "publishedAt": "2024-01-01T12:00:00.000Z"
+                    }
+                  },
+                  "pending": {
+                    "summary": "Publish pending confirmation",
+                    "value": {
+                      "success": true,
+                      "message": "发布流程已完成，请手动确认发布状态",
+                      "title": "我的视频标题",
+                      "description": "这是视频描述",
+                      "tags": ["标签1"],
+                      "videoUrl": "http://example.com/video.mp4",
+                      "publishedAt": "2024-01-01T12:00:00.000Z",
+                      "note": "建议在抖音创作者中心手动确认发布状态"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missing_video": {
+                    "summary": "Missing video URL",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "videoUrl 参数是必需的"
+                    }
+                  },
+                  "missing_title": {
+                    "summary": "Missing title",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "title 参数是必需的且不能为空"
+                    }
+                  },
+                  "title_too_long": {
+                    "summary": "Title too long",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "标题长度不能超过 55 个字符"
+                    }
+                  },
+                  "description_too_long": {
+                    "summary": "Description too long",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "描述长度不能超过 2200 个字符"
+                    }
+                  },
+                  "file_not_found": {
+                    "summary": "Video file not found",
+                    "value": {
+                      "error": "file_not_found",
+                      "message": "视频文件不存在: /path/to/video.mp4"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed or not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "no_cookies": {
+                    "summary": "No cookies available",
+                    "value": {
+                      "error": "no_cookies",
+                      "message": "Cookies 参数为空且无法从本地文件加载: 未找到 抖音 的本地 cookie 文件"
+                    }
+                  },
+                  "not_logged_in": {
+                    "summary": "Not logged in",
+                    "value": {
+                      "error": "not_logged_in",
+                      "message": "未登录或登录已过期，请先登录"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Publish failed or internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "upload_failed": {
+                    "summary": "Upload element not found",
+                    "value": {
+                      "error": "upload_element_not_found",
+                      "message": "无法找到上传按钮或文件输入框，请检查页面结构",
+                      "debugScreenshot": "/static/temp/debug-douyin-1234567890.png"
+                    }
+                  },
+                  "publish_failed": {
+                    "summary": "Publish button not found",
+                    "value": {
+                      "error": "publish_button_not_found",
+                      "message": "无法找到发布按钮，请检查页面状态"
+                    }
+                  },
+                  "internal_error": {
+                    "summary": "Internal server error",
+                    "value": {
+                      "error": "publish_failed",
+                      "message": "发布过程中发生未知错误"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiInfo": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "HTML -> Image API is running"
+          },
+          "endpoints": {
+            "type": "object",
+            "properties": {
+              "render": {
+                "type": "string",
+                "example": "POST /render"
+              },
+              "publishXiaohongshu": {
+                "type": "string",
+                "example": "POST /publish/xiaohongshu"
+              },
+              "publishDouyin": {
+                "type": "string",
+                "example": "POST /publish/douyin"
+              }
+            }
+          },
+          "usage": {
+            "type": "string",
+            "example": "POST /render with JSON { html: \"<html>...</html>\", type: \"png|jpeg\", encoding: \"binary|base64\", width, height, device: \"mobile|pc\" } or raw HTML with Content-Type: text/plain"
+          }
+        }
+      },
+      "RenderRequest": {
+        "type": "object",
+        "required": ["html"],
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "HTML content to convert to image",
+            "example": "<html><body><h1>Hello World</h1></body></html>"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["png", "jpeg"],
+            "default": "png",
+            "description": "Output image format"
+          },
+          "quality": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 80,
+            "description": "Image quality (for JPEG format)"
+          },
+          "transparent": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable transparent background (PNG only)"
+          },
+          "encoding": {
+              "type": "string",
+              "enum": ["binary", "base64", "url"],
+              "default": "binary",
+              "description": "Output encoding format"
+            },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector to capture specific element"
+          },
+          "waitUntil": {
+            "type": "string",
+            "enum": ["load", "domcontentloaded", "networkidle0", "networkidle2"],
+            "default": "networkidle0",
+            "description": "When to consider page loading complete"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Target image width in pixels"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Target image height in pixels"
+          },
+          "viewportWidth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Browser viewport width in pixels"
+          },
+          "viewportHeight": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Browser viewport height in pixels"
+          },
+          "deviceScaleFactor": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Device pixel ratio for high-DPI displays"
+          },
+          "device": {
+            "type": "string",
+            "enum": ["mobile", "pc", "desktop"],
+            "description": "Device type simulation (affects User-Agent and default viewport)"
+          },
+          "outputDir": {
+            "type": "string",
+            "description": "Output directory for saved images (when encoding=url). Can be relative to project root or absolute path. Default: 'public/images'",
+            "example": "public/custom"
+          },
+          "outputName": {
+            "type": "string",
+            "description": "Custom filename for saved image (when encoding=url). Extension will be added automatically based on type",
+            "example": "my-screenshot"
+          },
+          "puppeteerArgs": {
+            "type": "object",
+            "description": "Additional Puppeteer launch arguments",
+            "properties": {
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": ["--no-sandbox", "--disable-setuid-sandbox"],
+                "description": "Chrome launch arguments"
+              }
+            }
+          }
+        }
+      },
+      "Base64Response": {
+        "type": "object",
+        "properties": {
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"],
+            "description": "Encoding format"
+          },
+          "data": {
+            "type": "string",
+            "description": "Base64 encoded image data"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["png", "jpeg"],
+            "description": "Image format"
+          }
+        },
+        "required": ["encoding", "data", "type"]
+      },
+      "UrlResponse": {
+        "type": "object",
+        "properties": {
+          "encoding": {
+            "type": "string",
+            "enum": ["url"],
+            "description": "Encoding format"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL to access the saved image"
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute local file system path of the saved image"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Saved image file name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["png", "jpeg"],
+            "description": "Image format"
+          }
+        },
+        "required": ["encoding", "url", "path", "filename", "type"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error code"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message"
+          }
+        },
+        "required": ["error", "message"]
+      },
+      "Cookie": {
+        "type": "object",
+        "required": ["name", "value", "domain"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Cookie name"
+          },
+          "value": {
+            "type": "string",
+            "description": "Cookie value"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Cookie domain",
+            "example": ".xiaohongshu.com"
+          },
+          "path": {
+            "type": "string",
+            "default": "/",
+            "description": "Cookie path"
+          },
+          "secure": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether cookie is secure"
+          },
+          "httpOnly": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether cookie is HTTP-only"
+          },
+          "session": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether cookie is a session cookie"
+          }
+        }
+      },
+      "CrawlAibaseRequest": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "description": "Page number to crawl"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum number of items to crawl"
+          },
+          "usePuppeteer": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to use Puppeteer for crawling"
+          },
+          "saveToDb": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to save crawled items to database"
+          }
+        }
+      },
+      "CrawlAibaseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["test", "database"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "crawled": {
+            "type": "integer",
+            "description": "Number of items crawled"
+          },
+          "inserted": {
+            "type": "integer",
+            "description": "Number of items inserted to database"
+          },
+          "errors": {
+            "type": "integer",
+            "description": "Number of errors"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "summary": { "type": "string" },
+                "published_at": { "type": "string", "format": "date-time" },
+                "view_count": { "type": "integer" },
+                "url": { "type": "string" }
+              }
+            }
+          },
+          "errorDetails": {
+            "type": "array",
+            "description": "Error details (if any)"
+          }
+        }
+      },
+      "MergeAudioRequest": {
+        "type": "object",
+        "required": ["introUrl", "audioUrls"],
+        "properties": {
+          "bgUrl": {
+            "type": "string",
+            "description": "Background music URL (optional)"
+          },
+          "introUrl": {
+            "type": "string",
+            "description": "Introduction audio URL"
+          },
+          "audioUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Array of audio file URLs to merge"
+          },
+          "introTxt": {
+            "type": "string",
+            "description": "Introduction text for subtitle (optional)"
+          },
+          "audioTxts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Array of texts for subtitles (optional, must match audioUrls length)"
+          }
+        }
+      },
+      "MergeAudioResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL to access the merged audio"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local file path"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Output filename"
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Number of audio segments"
+          },
+          "srtUrl": {
+            "type": "string",
+            "description": "SRT subtitle file URL (if subtitles were generated)"
+          },
+          "srtPath": {
+            "type": "string",
+            "description": "SRT file local path"
+          },
+          "srtFilename": {
+            "type": "string",
+            "description": "SRT filename"
+          }
+        }
+      },
+      "AudioToVideoRequest": {
+        "type": "object",
+        "required": ["audioUrl"],
+        "properties": {
+          "audioUrl": {
+            "type": "string",
+            "description": "Audio file URL"
+          },
+          "width": {
+            "type": "integer",
+            "default": 1080,
+            "description": "Video width in pixels"
+          },
+          "height": {
+            "type": "integer",
+            "default": 1920,
+            "description": "Video height in pixels"
+          },
+          "backgroundColor": {
+            "type": "string",
+            "default": "#000000",
+            "description": "Background color (hex format)"
+          },
+          "backgroundImage": {
+            "type": "string",
+            "description": "Background image URL (optional)"
+          },
+          "waveColor": {
+            "type": "string",
+            "default": "#00ffff",
+            "description": "Waveform color (hex format)"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["line", "point", "p2p", "cline", "bar"],
+            "default": "bar",
+            "description": "Waveform visualization mode"
+          },
+          "barWidth": {
+            "type": "integer",
+            "default": 4,
+            "description": "Bar width for bar mode"
+          },
+          "barGap": {
+            "type": "integer",
+            "default": 2,
+            "description": "Bar gap for bar mode"
+          },
+          "barSpacing": {
+            "type": "integer",
+            "default": 2,
+            "description": "Bar spacing for bar mode"
+          },
+          "waveX": {
+            "type": "integer",
+            "description": "Waveform X position (default: 0)"
+          },
+          "waveY": {
+            "type": "integer",
+            "description": "Waveform Y position (default: 0)"
+          },
+          "waveWidth": {
+            "type": "integer",
+            "description": "Waveform width (default: video width)"
+          },
+          "waveHeight": {
+            "type": "integer",
+            "description": "Waveform height (default: video height)"
+          },
+          "srt": {
+            "type": "string",
+            "description": "SRT subtitle file URL (optional)"
+          }
+        }
+      },
+      "AudioToVideoResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL to access the video"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local file path"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Output filename"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "waveX": {
+            "type": "integer"
+          },
+          "waveY": {
+            "type": "integer"
+          },
+          "waveWidth": {
+            "type": "integer"
+          },
+          "waveHeight": {
+            "type": "integer"
+          },
+          "barSpacing": {
+            "type": "integer"
+          },
+          "srtUrl": {
+            "type": "string",
+            "description": "SRT subtitle file URL (if provided)"
+          },
+          "hasSubtitles": {
+            "type": "boolean"
+          },
+          "copiedPath": {
+            "type": "string",
+            "description": "Path where video was copied (if applicable)"
+          }
+        }
+      },
+      "LoginValidateRequest": {
+        "type": "object",
+        "required": ["platform"],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": ["xiaohongshu", "douyin"],
+            "description": "Platform identifier"
+          },
+          "cookies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cookie"
+            },
+            "description": "Cookies array (optional, if empty will load from local file)"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "headless": {
+                "type": "boolean",
+                "default": true,
+                "description": "Run browser in headless mode"
+              },
+              "timeout": {
+                "type": "integer",
+                "default": 30000,
+                "description": "Request timeout in milliseconds"
+              },
+              "savePath": {
+                "type": "string",
+                "default": "./cookies",
+                "description": "Path to save/load cookies"
+              },
+              "cookieFilePath": {
+                "type": "string",
+                "description": "Specific cookie file path (optional, if not provided will find latest)"
+              }
+            }
+          },
+          "cookieFilePath": {
+            "type": "string",
+            "description": "Specific cookie file path (alternative to options.cookieFilePath)"
+          }
+        }
+      },
+      "LoginValidateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "platformName": {
+            "type": "string",
+            "description": "Display name of the platform"
+          },
+          "message": {
+            "type": "string"
+          },
+          "cookies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cookie"
+            }
+          },
+          "cookiesCount": {
+            "type": "integer"
+          },
+          "savedPath": {
+            "type": "string",
+            "description": "Path where cookies were saved"
+          }
+        }
+      },
+      "LoginValidateErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "platform": {
+            "type": "string"
+          },
+          "platformName": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "enum": ["validation_failed", "no_cookies_available"]
+          }
+        }
+      },
+      "PlatformsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "loginUrl": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "PlatformConfigResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "loginUrl": {
+                "type": "string"
+              },
+              "checkUrl": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "PublishXiaohongshuRequest": {
+        "type": "object",
+        "required": ["videoUrl", "title"],
+        "properties": {
+          "videoUrl": {
+            "type": "string",
+            "description": "Video file URL (http/https) or local file path (relative to project root or absolute path)",
+            "example": "http://example.com/video.mp4"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Video title (required, max 20 characters)",
+            "example": "我的视频标题"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Video description (optional, max 1000 characters)",
+            "example": "这是视频描述"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Video tags (optional). Tags will be automatically prefixed with # if not already present",
+            "example": ["标签1", "标签2", "标签3"]
+          },
+          "coverImage": {
+            "type": "string",
+            "description": "Cover image URL (optional, not yet implemented in current version)",
+            "example": "http://example.com/cover.jpg"
+          },
+          "cookies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cookie"
+            },
+            "description": "Cookies array (optional, if empty will automatically load from local cookie file)",
+            "default": []
+          },
+          "options": {
+            "type": "object",
+            "description": "Publish options",
+            "properties": {
+              "headless": {
+                "type": "boolean",
+                "default": false,
+                "description": "Run browser in headless mode (default: false for easier debugging)"
+              },
+              "timeout": {
+                "type": "integer",
+                "default": 120000,
+                "minimum": 10000,
+                "maximum": 600000,
+                "description": "Request timeout in milliseconds (default: 120000 = 2 minutes)"
+              },
+              "savePath": {
+                "type": "string",
+                "default": "./cookies",
+                "description": "Path to save/load cookies (default: ./cookies)"
+              },
+              "cookieFilePath": {
+                "type": "string",
+                "description": "Specific cookie file path (optional, if not provided will find latest cookie file)"
+              }
+            }
+          }
+        }
+      },
+      "PublishXiaohongshuResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the publish operation was successful"
+          },
+          "message": {
+            "type": "string",
+            "description": "Success or status message",
+            "example": "视频发布成功"
+          },
+          "title": {
+            "type": "string",
+            "description": "Published video title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Published video description"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Published video tags"
+          },
+          "videoUrl": {
+            "type": "string",
+            "description": "Original video URL or path that was published"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the video was published"
+          },
+          "note": {
+            "type": "string",
+            "description": "Additional note or recommendation (only present when manual confirmation is suggested)",
+            "example": "建议在小红书创作者中心手动确认发布状态"
+          }
+        },
+        "required": ["success", "message", "title", "videoUrl", "publishedAt"]
+      },
+      "PublishDouyinRequest": {
+        "type": "object",
+        "required": ["videoUrl", "title"],
+        "properties": {
+          "videoUrl": {
+            "type": "string",
+            "description": "Video file URL (http/https) or local file path (relative to project root or absolute path)",
+            "example": "http://example.com/video.mp4"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 55,
+            "description": "Video title (required, max 55 characters)",
+            "example": "我的视频标题"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2200,
+            "description": "Video description (optional, max 2200 characters)",
+            "example": "这是视频描述"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Video tags (optional). Tags will be automatically prefixed with # if not already present",
+            "example": ["标签1", "标签2", "标签3"]
+          },
+          "coverImage": {
+            "type": "string",
+            "description": "Cover image URL (optional, not yet implemented in current version)",
+            "example": "http://example.com/cover.jpg"
+          },
+          "cookies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cookie"
+            },
+            "description": "Cookies array (optional, if empty will automatically load from local cookie file)",
+            "default": []
+          },
+          "options": {
+            "type": "object",
+            "description": "Publish options",
+            "properties": {
+              "headless": {
+                "type": "boolean",
+                "default": false,
+                "description": "Run browser in headless mode (default: false for easier debugging)"
+              },
+              "timeout": {
+                "type": "integer",
+                "default": 120000,
+                "minimum": 10000,
+                "maximum": 600000,
+                "description": "Request timeout in milliseconds (default: 120000 = 2 minutes)"
+              },
+              "savePath": {
+                "type": "string",
+                "default": "./cookies",
+                "description": "Path to save/load cookies (default: ./cookies)"
+              },
+              "cookieFilePath": {
+                "type": "string",
+                "description": "Specific cookie file path (optional, if not provided will find latest cookie file)"
+              }
+            }
+          }
+        }
+      },
+      "PublishDouyinResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the publish operation was successful"
+          },
+          "message": {
+            "type": "string",
+            "description": "Success or status message",
+            "example": "视频发布成功"
+          },
+          "title": {
+            "type": "string",
+            "description": "Published video title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Published video description"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Published video tags"
+          },
+          "videoUrl": {
+            "type": "string",
+            "description": "Original video URL or path that was published"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the video was published"
+          },
+          "note": {
+            "type": "string",
+            "description": "Additional note or recommendation (only present when manual confirmation is suggested)",
+            "example": "建议在抖音创作者中心手动确认发布状态"
+          }
+        },
+        "required": ["success", "message", "title", "videoUrl", "publishedAt"]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "render",
+      "description": "HTML to Image conversion operations"
+    },
+    {
+      "name": "info",
+      "description": "API information and health check"
+    },
+    {
+      "name": "crawl",
+      "description": "Web crawling operations"
+    },
+    {
+      "name": "audio",
+      "description": "Audio processing and merging operations"
+    },
+    {
+      "name": "video",
+      "description": "Video conversion and processing operations"
+    },
+    {
+      "name": "login",
+      "description": "Platform login validation operations"
+    },
+    {
+      "name": "publish",
+      "description": "Video publishing operations to social media platforms"
+    }
+  ]
+}
