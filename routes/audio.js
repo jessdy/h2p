@@ -347,11 +347,12 @@ router.post('/audio', express.json({ limit: '50mb' }), async (req, res) => {
     // 生成最终输出文件名
     const outputFileName = `merged-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp3`;
     outputFilePath = path.join(outputDir, outputFileName);
+    const DELAY_SECONDS = 1;
 
     // 如果有背景音乐，混合背景音乐和拼接的音频
     if (bgFilePath) {
       // 背景音乐从0秒开始，拼接的音频从5秒开始
-      const DELAY_SECONDS = 1;
+      
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(bgFilePath)
@@ -382,7 +383,6 @@ router.post('/audio', express.json({ limit: '50mb' }), async (req, res) => {
       });
     } else {
       // 没有背景音乐，拼接的音频从5秒开始（在前面添加5秒静音）
-      const DELAY_SECONDS = 5;
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input('anullsrc=channel_layout=stereo:sample_rate=44100')
@@ -436,9 +436,8 @@ router.post('/audio', express.json({ limit: '50mb' }), async (req, res) => {
 
         // 计算每个字幕的时间戳（按标点符号分割长文本）
         // 字幕从5秒开始（拼接的音频从5秒开始播放）
-        const SUBTITLE_START_OFFSET = 5;
         const subtitles = [];
-        let currentTime = SUBTITLE_START_OFFSET;
+        let currentTime = DELAY_SECONDS;
 
         // 添加介绍音频的字幕
         const introDuration = durations[0];
@@ -487,12 +486,14 @@ router.post('/audio', express.json({ limit: '50mb' }), async (req, res) => {
       }
     }
 
+    const allDuration = await getAudioDuration(outputFilePath);
+
     const response = {
       success: true,
       url: audioUrl,
       path: outputFilePath,
       filename: outputFileName,
-      duration: downloadedFiles.length,
+      duration: allDuration,
     };
 
     if (srtUrl) {
