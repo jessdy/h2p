@@ -38,7 +38,7 @@ router.post('/url-screenshot', express.json({ limit: '10mb' }), async (req, res)
     quality = 80,
     encoding = 'url',
     waitUntil = 'networkidle0',
-    timeout = 30000,
+    timeout = 60000,
     outputDir,
     outputName,
   } = req.body || {};
@@ -512,6 +512,54 @@ router.post('/url-screenshot', express.json({ limit: '10mb' }), async (req, res)
       }
     }
 
+    // 检查是否是超时错误
+    const isTimeout = err && (
+      err.message && (
+        err.message.includes('timeout') ||
+        err.message.includes('Timeout') ||
+        err.message.includes('Navigation timeout') ||
+        err.message.includes('waiting for') ||
+        err.name === 'TimeoutError'
+      )
+    );
+
+    if (isTimeout) {
+      console.warn('[render/url-screenshot] Screenshot timeout, returning empty URL');
+      
+      // 根据编码格式返回空结果
+      if (imageEncoding === 'base64') {
+        return res.json({
+          success: true,
+          encoding: 'base64',
+          data: '',
+          type: imageType,
+          url: targetUrl,
+          width: screenWidth,
+          fullPage: isFullPage,
+          timeout: true,
+        });
+      }
+
+      if (imageEncoding === 'url') {
+        return res.json({
+          success: true,
+          encoding: 'url',
+          url: '',
+          path: '',
+          type: imageType,
+          filename: '',
+          sourceUrl: targetUrl,
+          width: screenWidth,
+          fullPage: isFullPage,
+          timeout: true,
+        });
+      }
+
+      // binary 格式：返回空响应
+      return res.status(204).send();
+    }
+
+    // 非超时错误，返回错误响应
     return res.status(500).json({
       error: 'screenshot_failed',
       message: err && err.message ? err.message : String(err),
