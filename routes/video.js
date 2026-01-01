@@ -430,6 +430,7 @@ function getImageDimensions(filePath) {
  * - targetDuration: 目标时长（秒）
  * - imageUrls: 图片URL数组
  * - videoUrls: 视频URL数组
+ * - appendVideoUrls: 追加视频URL数组（当videoUrls和imageUrls生成的时长不够时使用）
  * 
  * 输出：
  * - url: 视频文件URL
@@ -437,7 +438,7 @@ function getImageDimensions(filePath) {
  * - duration: 视频实际时长
  */
 router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req, res) => {
-  let { targetDuration, imageUrls = [], videoUrls = [] } = req.body || {};
+  let { targetDuration, imageUrls = [], videoUrls = [], appendVideoUrls = [] } = req.body || {};
 
   // 参数验证
   if (typeof targetDuration !== 'number' || targetDuration <= 0) {
@@ -461,16 +462,24 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
     });
   }
 
-  if (imageUrls.length === 0 && videoUrls.length === 0) {
+  if (!Array.isArray(appendVideoUrls)) {
     return res.status(400).json({
       error: 'invalid_request',
-      message: 'At least one of imageUrls or videoUrls must be provided',
+      message: 'appendVideoUrls must be an array',
+    });
+  }
+
+  if (imageUrls.length === 0 && videoUrls.length === 0 && appendVideoUrls.length === 0) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: 'At least one of imageUrls, videoUrls, or appendVideoUrls must be provided',
     });
   }
 
   // URL处理
   imageUrls = imageUrls.map(url => normalizeUrl(url)).filter(url => url);
   videoUrls = videoUrls.map(url => normalizeUrl(url)).filter(url => url);
+  appendVideoUrls = appendVideoUrls.map(url => normalizeUrl(url)).filter(url => url);
 
   const tempDir = path.join(os.tmpdir(), `video-9-16-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const outputDir = path.join(__dirname, '..', 'public', 'videos');
@@ -482,7 +491,7 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
     await fs.promises.mkdir(tempDir, { recursive: true });
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    console.log(`[generate/video-9-16] Starting generation, targetDuration: ${targetDuration}s, videoUrls: ${videoUrls.length}, imageUrls: ${imageUrls.length}`);
+    console.log(`[generate/video-9-16] Starting generation, targetDuration: ${targetDuration}s, videoUrls: ${videoUrls.length}, imageUrls: ${imageUrls.length}, appendVideoUrls: ${appendVideoUrls.length}`);
 
     const VIDEO_WIDTH = 1080;
     const VIDEO_HEIGHT = 1920;
@@ -808,7 +817,142 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
       processedVideoFiles.push(...imageVideoFiles);
     }
 
-    // 步骤3: 拼接所有视频（视频拼接的视频 + 图片生成的视频）
+    // 步骤3: 如果时长还不够，处理追加的视频
+    let currentTotalDuration = 0;
+    if (processedVideoFiles.length > 0) {
+      // 计算当前所有视频的总时长
+      for (const videoFile of processedVideoFiles) {
+        const duration = await getVideoDuration(videoFile);
+        currentTotalDuration += duration;
+      }
+    }
+
+    const remainingAfterImages = targetDuration - currentTotalDuration;
+    console.log(`[generate/video-9-16] Current total duration: ${currentTotalDuration.toFixed(2)}s, Remaining after images: ${remainingAfterImages.toFixed(2)}s`);
+
+    if (remainingAfterImages > 0 && appendVideoUrls.length > 0) {
+      console.log(`[generate/video-9-16] Processing append videos to fill remaining duration...`);
+
+      // 下载所有追加视频
+      const downloadedAppendVideoFiles = [];
+      for (let i = 0; i < appendVideoUrls.length; i++) {
+        const videoUrl = appendVideoUrls[i];
+        const videoExt = getFileExtension(videoUrl) || 'mp4';
+        const videoFileName = `append-video-${i}-${Date.now()}.${videoExt}`;
+        const videoFilePath = path.join(tempDir, videoFileName);
+        try {
+          await downloadVideo(videoUrl, videoFilePath);
+          downloadedAppendVideoFiles.push(videoFilePath);
+          tempFiles.push(videoFilePath);
+          console.log(`[generate/video-9-16] Downloaded append video ${i + 1}/${appendVideoUrls.length}: ${videoFilePath}`);
+        } catch (err) {
+          console.warn(`[generate/video-9-16] Failed to download append video ${i + 1}:`, err);
+        }
+      }
+
+      // 处理每个追加视频：转换为9:16，并获取时长
+      const appendProcessedVideos = [];
+      let appendAccumulatedDuration = 0;
+
+      for (let i = 0; i < downloadedAppendVideoFiles.length; i++) {
+        const videoPath = downloadedAppendVideoFiles[i];
+        const duration = await getVideoDuration(videoPath);
+        console.log(`[generate/video-9-16] Append video ${i + 1} duration: ${duration.toFixed(2)}s`);
+
+        // 转换为9:16格式
+        const processedVideoPath = path.join(tempDir, `append-processed-video-${i}-${Date.now()}.mp4`);
+        await new Promise((resolve, reject) => {
+          ffmpeg(videoPath)
+            .videoFilters([
+              `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease`,
+              `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black`,
+              'setsar=1',
+            ])
+            .videoCodec('libx264')
+            .outputOptions([
+              '-pix_fmt', 'yuv420p',
+              '-r', '30',
+              '-map', '0:v:0',
+              '-map', '0:a?',
+            ])
+            .audioCodec('aac')
+            .on('start', (commandLine) => {
+              console.log(`[generate/video-9-16] Processing append video ${i + 1}: ${commandLine}`);
+            })
+            .on('end', () => {
+              console.log(`[generate/video-9-16] Processed append video ${i + 1}: ${processedVideoPath}`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`[generate/video-9-16] Error processing append video ${i + 1}:`, err);
+              reject(err);
+            })
+            .save(processedVideoPath);
+        });
+
+        appendProcessedVideos.push({
+          path: processedVideoPath,
+          duration: duration,
+        });
+        tempFiles.push(processedVideoPath);
+        appendAccumulatedDuration += duration;
+
+        // 如果累计时长已经达到或超过剩余时长，停止处理
+        if (appendAccumulatedDuration >= remainingAfterImages) {
+          console.log(`[generate/video-9-16] Append videos duration (${appendAccumulatedDuration.toFixed(2)}s) reached remaining duration`);
+          break;
+        }
+      }
+
+      // 如果追加视频总时长超过剩余时长，需要截取最后一个视频
+      if (appendProcessedVideos.length > 0 && appendAccumulatedDuration > remainingAfterImages) {
+        const lastVideo = appendProcessedVideos[appendProcessedVideos.length - 1];
+        const lastVideoDuration = await getVideoDuration(lastVideo.path);
+        const excessDuration = appendAccumulatedDuration - remainingAfterImages;
+        const trimmedDuration = lastVideoDuration - excessDuration;
+
+        if (trimmedDuration > 0) {
+          // 截取最后一个视频
+          const trimmedVideoPath = path.join(tempDir, `append-trimmed-video-${Date.now()}.mp4`);
+          await new Promise((resolve, reject) => {
+            ffmpeg(lastVideo.path)
+              .setDuration(trimmedDuration)
+              .videoCodec('libx264')
+              .audioCodec('aac')
+              .outputOptions(['-pix_fmt', 'yuv420p'])
+              .on('start', (commandLine) => {
+                console.log(`[generate/video-9-16] Trimming last append video: ${commandLine}`);
+              })
+              .on('end', () => {
+                console.log(`[generate/video-9-16] Last append video trimmed: ${trimmedVideoPath}`);
+                resolve();
+              })
+              .on('error', (err) => {
+                console.error(`[generate/video-9-16] Error trimming last append video:`, err);
+                reject(err);
+              })
+              .save(trimmedVideoPath);
+          });
+
+          // 替换最后一个视频
+          appendProcessedVideos[appendProcessedVideos.length - 1] = {
+            path: trimmedVideoPath,
+            duration: trimmedDuration,
+          };
+          tempFiles.push(trimmedVideoPath);
+        } else {
+          // 如果截取后时长<=0，移除最后一个视频
+          appendProcessedVideos.pop();
+        }
+      }
+
+      // 将追加的视频添加到处理后的视频列表
+      const appendVideoPaths = appendProcessedVideos.map(v => v.path);
+      processedVideoFiles.push(...appendVideoPaths);
+      console.log(`[generate/video-9-16] Added ${appendVideoPaths.length} append videos to the final list`);
+    }
+
+    // 步骤4: 拼接所有视频（视频拼接的视频 + 图片生成的视频 + 追加的视频）
     if (processedVideoFiles.length === 0) {
       return res.status(400).json({
         error: 'no_video_generated',
