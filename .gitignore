@@ -4,3 +4,4 @@ node_modules
 public/videos
 cookies/**/*.json
 public/**/*
+sync_config.jsonc

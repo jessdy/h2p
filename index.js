@@ -17,6 +17,7 @@ const audioRouter = require('./routes/audio');
 const videoRouter = require('./routes/video');
 const loginRouter = require('./routes/login');
 const publishRouter = require('./routes/publish');
+const satoriRouter = require('./routes/satori');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -48,10 +49,13 @@ app.get('/', (req, res) => {
       loginPlatform: 'GET /login/platform/:platform',
       publishXiaohongshu: 'POST /publish/xiaohongshu',
       publishDouyin: 'POST /publish/douyin',
+      satori: 'GET /satori (Satori 代码预览界面)',
+      satoriRender: 'POST /satori/render',
       docs: 'GET /api-docs (Swagger UI)',
     },
     usage: 'POST /render with JSON { html: "<html>...</html>", type: "png|jpeg", encoding: "binary|base64", width, height, device: "mobile|pc" } or raw HTML with Content-Type: text/plain',
     documentation: 'Visit /api-docs for interactive API documentation',
+    tools: 'Visit /satori for Satori code preview tool',
   });
 });
 
@@ -62,6 +66,7 @@ app.use('/merge', audioRouter);
 app.use('/', videoRouter);
 app.use('/login', loginRouter);
 app.use('/publish', publishRouter);
+app.use('/satori', satoriRouter);
 
 // 启动服务器
 app.listen(port, () => {

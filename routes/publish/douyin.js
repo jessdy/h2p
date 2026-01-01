@@ -153,7 +153,7 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
 
     // 创建上下文
     context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
+      viewport: { width: 1280, height: 800 },
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
 
@@ -191,7 +191,7 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
     // 检查是否已登录
     const currentUrl = page.url();
     if (currentUrl.includes('/login') || currentUrl.includes('/signin') || currentUrl.includes('/passport')) {
-      return res.status(401).json({
+      return res.status(200).json({
         error: 'not_logged_in',
         message: '未登录或登录已过期，请先登录',
       });
@@ -228,7 +228,7 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
     console.log(`[publish/douyin] 视频文件已选择，等待上传完成...`);
 
     // 等待视频上传完成（通常会有进度提示）
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2000);
 
     // 等待视频检测完成，判断检测结果是否为"作品未见异常"
     console.log(`[publish/douyin] 等待视频检测完成...`);
@@ -245,14 +245,14 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
           }
           return false;
         },
-        { timeout: 30000 } // 最多等待 30 秒
+        { timeout: 20000 } // 最多等待 30 秒
       );
       console.log(`[publish/douyin] 视频检测完成，作品未见异常`);
     } catch (e) {
       console.warn(`[publish/douyin] 等待视频检测超时或未找到检测结果，继续执行...`);
       // 即使超时也继续执行，因为可能检测已经完成但元素结构不同
     }
-    await page.screenshot({ path: path.join(__dirname, '../../public/temp', `debug-${Date.now()}.png`), fullPage: true });
+    // await page.screenshot({ path: path.join(__dirname, '../../public/temp', `debug-${Date.now()}.png`), fullPage: true });
     
     // 填写标题
     console.log(`[publish/douyin] 填写标题: ${title}`);
@@ -298,18 +298,12 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
     }
 
     // 等待一下，确保所有内容都已填写
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(20000);
 
     // 查找发布按钮
     console.log(`[publish/douyin] 查找发布按钮...`);
     const publishSelectors = [
-      'button:has-text("发布")',
-      'button:has-text("立即发布")',
-      'button:has-text("确认发布")',
-      'button[class*="publishBtn"]',
-      'button[class*="Publish"]',
-      '[class*="publish-button"]',
-      '[data-testid*="publish"]',
+      '#popover-tip-container button:text-is("发布")'
     ];
 
     let publishButton = null;
@@ -411,7 +405,7 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
 
     // 等待发布完成
     console.log(`[publish/douyin] 等待发布完成...`);
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(120000);
 
     // 检查是否发布成功（通常会有成功提示或跳转）
     const finalUrl = page.url();
@@ -427,6 +421,7 @@ router.post('/', express.json({ limit: '100mb' }), async (req, res) => {
     const isSuccess = successIndicators.some(pattern => 
       pattern.test(pageContent) || pattern.test(finalUrl)
     );
+    // page.screenshot({ path: path.join(__dirname, '../../public/temp', `debug-${Date.now()}.png`), fullPage: true });
 
     if (isSuccess || !finalUrl.includes('/upload')) {
       console.log(`[publish/douyin] 发布成功`);

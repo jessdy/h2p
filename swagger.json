@@ -70,10 +70,10 @@
                   "value": {
                     "html": "<html><body><h1>Custom Size</h1></body></html>",
                     "type": "jpeg",
-                    "width": 1200,
-                    "height": 800,
-                    "viewportWidth": 1200,
-                    "viewportHeight": 800,
+                    "width": 1080,
+                    "height": 1920,
+                    "viewportWidth": 1080,
+                    "viewportHeight": 1920,
                     "quality": 90
                   }
                 },
@@ -104,8 +104,8 @@
                     "outputName": "banner-home",
                     "outputDir": "public/custom",
                     "quality": 95,
-                    "width": 1200,
-                    "height": 400
+                    "width": 1080,
+                    "height": 1920
                   }
                 }
               }
