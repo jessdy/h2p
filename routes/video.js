@@ -726,8 +726,8 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
             ffmpeg()
               .input(imagePath)
               .inputOptions(['-loop', '1', '-framerate', '30'])
-              .inputOptions(['-vf', `"crop=w=${VIDEO_WIDTH}:h=${VIDEO_HEIGHT}:x=0:y='t*100',fps=30"`])
-              .inputOptions(['-t', String(imageVideoDuration)])
+              .outputOptions(['-vf', `"crop=w=${VIDEO_WIDTH}:h=${VIDEO_HEIGHT}:x=0:y='t*100',fps=30"`])
+              .outputOptions(['-t', String(imageVideoDuration)])
               .videoCodec('libx264')
               .outputOptions([
                 '-pix_fmt', 'yuv420p'
