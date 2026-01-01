@@ -6,6 +6,14 @@ const path = require('path');
 const router = express.Router();
 
 /**
+ * 通用延迟函数
+ * @param {number} ms - 延迟毫秒数
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * URL 截图接口
  * POST /render/url-screenshot
  * 
@@ -130,6 +138,121 @@ router.post('/url-screenshot', express.json({ limit: '10mb' }), async (req, res)
         timeout: timeout,
       });
 
+      // 等待页面稳定并触发懒加载图片
+      if (isFullPage) {
+        console.log('[render/url-screenshot] Scrolling page to trigger lazy-loaded images...');
+        // 获取页面总高度
+        const pageHeight = await page.evaluate(() => {
+          return Math.max(
+            document.body.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.clientHeight,
+            document.documentElement.scrollHeight,
+            document.documentElement.offsetHeight
+          );
+        });
+
+        // 逐步滚动页面，触发懒加载
+        const viewportHeight = 1080;
+        const scrollStep = viewportHeight * 0.8; // 每次滚动80%的视口高度
+        let currentScroll = 0;
+
+        while (currentScroll < pageHeight) {
+          // 滚动到当前位置
+          await page.evaluate((scrollY) => {
+            window.scrollTo(0, scrollY);
+          }, currentScroll);
+
+          // 等待一段时间让图片加载
+          if (page.waitForTimeout) {
+            await page.waitForTimeout(500);
+          } else {
+            await sleep(500);
+          }
+
+          // 等待所有图片加载完成（检查当前视口内的图片）
+          try {
+            await page.evaluate(() => {
+              return Promise.all(
+                Array.from(document.images)
+                  .filter(img => {
+                    const rect = img.getBoundingClientRect();
+                    // 只检查当前视口内的图片
+                    return rect.top >= -100 && rect.top <= window.innerHeight + 100;
+                  })
+                  .filter(img => !img.complete)
+                  .map(img => {
+                    return new Promise((resolve, reject) => {
+                      img.onload = resolve;
+                      img.onerror = resolve; // 即使加载失败也继续
+                      // 设置超时，避免无限等待
+                      setTimeout(resolve, 2000);
+                    });
+                  })
+              );
+            });
+          } catch (e) {
+            console.warn('[render/url-screenshot] Error waiting for images:', e);
+          }
+
+          currentScroll += scrollStep;
+        }
+
+        // 滚动回顶部
+        await page.evaluate(() => {
+          window.scrollTo(0, 0);
+        });
+        if (page.waitForTimeout) {
+          await page.waitForTimeout(300);
+        } else {
+          await sleep(300);
+        }
+
+        // 再次等待所有图片加载完成
+        try {
+          await page.evaluate(() => {
+            return Promise.all(
+              Array.from(document.images)
+                .filter(img => !img.complete)
+                .map(img => {
+                  return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                    setTimeout(resolve, 2000);
+                  });
+                })
+            );
+          });
+        } catch (e) {
+          console.warn('[render/url-screenshot] Error waiting for all images:', e);
+        }
+
+        console.log('[render/url-screenshot] Finished scrolling and waiting for images');
+      } else {
+        // 非长截图时，也等待当前视口内的图片加载
+        try {
+          await page.evaluate(() => {
+            return Promise.all(
+              Array.from(document.images)
+                .filter(img => {
+                  const rect = img.getBoundingClientRect();
+                  return rect.top >= 0 && rect.top <= window.innerHeight;
+                })
+                .filter(img => !img.complete)
+                .map(img => {
+                  return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                    setTimeout(resolve, 2000);
+                  });
+                })
+            );
+          });
+        } catch (e) {
+          console.warn('[render/url-screenshot] Error waiting for images:', e);
+        }
+      }
+
       // 截图选项
       const screenshotOptions = {
         type: imageType,
@@ -170,6 +293,121 @@ router.post('/url-screenshot', express.json({ limit: '10mb' }), async (req, res)
         waitUntil: waitCondition,
         timeout: timeout,
       });
+
+      // 等待页面稳定并触发懒加载图片
+      if (isFullPage) {
+        console.log('[render/url-screenshot] Scrolling page to trigger lazy-loaded images...');
+        // 获取页面总高度
+        const pageHeight = await page.evaluate(() => {
+          return Math.max(
+            document.body.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.clientHeight,
+            document.documentElement.scrollHeight,
+            document.documentElement.offsetHeight
+          );
+        });
+
+        // 逐步滚动页面，触发懒加载
+        const viewportHeight = 1080;
+        const scrollStep = viewportHeight * 0.8; // 每次滚动80%的视口高度
+        let currentScroll = 0;
+
+        while (currentScroll < pageHeight) {
+          // 滚动到当前位置
+          await page.evaluate((scrollY) => {
+            window.scrollTo(0, scrollY);
+          }, currentScroll);
+
+          // 等待一段时间让图片加载
+          if (page.waitForTimeout) {
+            await page.waitForTimeout(500);
+          } else {
+            await sleep(500);
+          }
+
+          // 等待所有图片加载完成（检查当前视口内的图片）
+          try {
+            await page.evaluate(() => {
+              return Promise.all(
+                Array.from(document.images)
+                  .filter(img => {
+                    const rect = img.getBoundingClientRect();
+                    // 只检查当前视口内的图片
+                    return rect.top >= -100 && rect.top <= window.innerHeight + 100;
+                  })
+                  .filter(img => !img.complete)
+                  .map(img => {
+                    return new Promise((resolve, reject) => {
+                      img.onload = resolve;
+                      img.onerror = resolve; // 即使加载失败也继续
+                      // 设置超时，避免无限等待
+                      setTimeout(resolve, 2000);
+                    });
+                  })
+              );
+            });
+          } catch (e) {
+            console.warn('[render/url-screenshot] Error waiting for images:', e);
+          }
+
+          currentScroll += scrollStep;
+        }
+
+        // 滚动回顶部
+        await page.evaluate(() => {
+          window.scrollTo(0, 0);
+        });
+        if (page.waitForTimeout) {
+          await page.waitForTimeout(300);
+        } else {
+          await sleep(300);
+        }
+
+        // 再次等待所有图片加载完成
+        try {
+          await page.evaluate(() => {
+            return Promise.all(
+              Array.from(document.images)
+                .filter(img => !img.complete)
+                .map(img => {
+                  return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                    setTimeout(resolve, 2000);
+                  });
+                })
+            );
+          });
+        } catch (e) {
+          console.warn('[render/url-screenshot] Error waiting for all images:', e);
+        }
+
+        console.log('[render/url-screenshot] Finished scrolling and waiting for images');
+      } else {
+        // 非长截图时，也等待当前视口内的图片加载
+        try {
+          await page.evaluate(() => {
+            return Promise.all(
+              Array.from(document.images)
+                .filter(img => {
+                  const rect = img.getBoundingClientRect();
+                  return rect.top >= 0 && rect.top <= window.innerHeight;
+                })
+                .filter(img => !img.complete)
+                .map(img => {
+                  return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                    setTimeout(resolve, 2000);
+                  });
+                })
+            );
+          });
+        } catch (e) {
+          console.warn('[render/url-screenshot] Error waiting for images:', e);
+        }
+      }
 
       // 如果是长截图，获取页面完整高度
       let screenshotOptions = {
