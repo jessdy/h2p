@@ -351,7 +351,7 @@ router.post('/audio', express.json({ limit: '50mb' }), async (req, res) => {
     // 如果有背景音乐，混合背景音乐和拼接的音频
     if (bgFilePath) {
       // 背景音乐从0秒开始，拼接的音频从5秒开始
-      const DELAY_SECONDS = 5;
+      const DELAY_SECONDS = 1;
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(bgFilePath)
