@@ -716,32 +716,34 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
           imageVideoPath = path.join(tempDir, `image-video-scroll-${i}-${Date.now()}.mp4`);
           await new Promise((resolve, reject) => {
             // 创建滚动视频：从顶部滚动到底部
-            // 计算滚动速度：从y=0滚动到y=scrollDistance，用时imageVideoDuration秒
-            const scrollSpeed = scrollDistance / imageVideoDuration; // 像素/秒
+            // 使用overlay滤镜实现滚动效果，更可靠
+            // 先创建一个黑色背景，然后将图片从顶部移动到底部
             
-            // 使用crop滤镜实现滚动：y坐标从0开始，随时间增加，最大为scrollDistance
-            // FFmpeg表达式：使用if(gte(...), max, calculated)来限制最大值
-            const cropYExpression = `if(gte(t*${scrollSpeed}\\,${scrollDistance})\\,${scrollDistance}\\,t*${scrollSpeed})`;
-
             ffmpeg()
+              .input('color=c=black:s=' + VIDEO_WIDTH + 'x' + VIDEO_HEIGHT + ':d=' + String(imageVideoDuration))
+              .inputOptions(['-f', 'lavfi', '-framerate', '30'])
               .input(imagePath)
               .inputOptions(['-loop', '1', '-framerate', '30'])
               .input('anullsrc=channel_layout=stereo:sample_rate=44100')
               .inputOptions(['-f', 'lavfi', '-t', String(imageVideoDuration)])
-              .videoFilters([
-                `scale=${VIDEO_WIDTH}:${scaledHeight}:force_original_aspect_ratio=decrease`,
-                `pad=${VIDEO_WIDTH}:${scaledHeight}:(ow-iw)/2:(oh-ih)/2:color=black`,
-                `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:0:${cropYExpression}`,
-                'setsar=1',
+              .complexFilter([
+                // 缩放图片
+                `[1:v]scale=${VIDEO_WIDTH}:${scaledHeight}:force_original_aspect_ratio=decrease[scaled]`,
+                // 填充图片到完整高度
+                `[scaled]pad=${VIDEO_WIDTH}:${scaledHeight}:(ow-iw)/2:(oh-ih)/2:color=black[padded]`,
+                // 使用overlay实现滚动：图片从y=0（顶部）移动到y=-scrollDistance（底部）
+                // y坐标公式：从0开始，随时间减少到-scrollDistance
+                // 使用max确保不会超出范围
+                `[0:v][padded]overlay=0:max(${-scrollDistance}\\,-t*${scrollSpeed})[v]`
               ])
               .videoCodec('libx264')
               .audioCodec('aac')
               .outputOptions([
                 '-pix_fmt', 'yuv420p',
                 '-r', '30',
+                '-map', '[v]',
+                '-map', '2:a:0',
                 '-shortest',
-                '-map', '0:v:0',
-                '-map', '1:a:0',
               ])
               .on('start', (commandLine) => {
                 console.log(`[generate/video-9-16] Creating scroll video for image ${i + 1}: ${commandLine}`);
