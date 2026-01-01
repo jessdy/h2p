@@ -835,9 +835,9 @@ router.post('/render-image', async (req, res) => {
         let urlPath;
         if (finalOutputDir.startsWith(path.join(__dirname, '..', 'public'))) {
           const relativePath = path.relative(path.join(__dirname, '..', 'public'), filePath);
-          urlPath = `/static/${relativePath.split(path.sep).join('/')}`;
+          urlPath = `/yuniyouyue/${relativePath.split(path.sep).join('/')}`;
         } else {
-          urlPath = `/static/${fileName}`;
+          urlPath = `/yuniyouyue/${fileName}`;
         }
 
         return res.json({
