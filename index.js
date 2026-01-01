@@ -41,6 +41,7 @@ app.get('/', (req, res) => {
     message: 'HTML -> Image API is running',
     endpoints: {
       render: 'POST /render',
+      urlScreenshot: 'POST /render/url-screenshot',
       crawl: 'POST /crawl/aibase',
       mergeAudio: 'POST /merge/audio',
       audioToVideo: 'POST /convert/audio-to-video',
