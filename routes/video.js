@@ -713,6 +713,9 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
             imageVideoDuration = Math.max(1, remainingDuration - accumulatedDuration);
           }
 
+          // 重新计算滚动速度（因为imageVideoDuration可能被调整了）
+          const scrollSpeed = scrollDistance / imageVideoDuration; // 像素/秒
+
           imageVideoPath = path.join(tempDir, `image-video-scroll-${i}-${Date.now()}.mp4`);
           await new Promise((resolve, reject) => {
             // 创建滚动视频：从顶部滚动到底部
