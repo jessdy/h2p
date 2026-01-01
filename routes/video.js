@@ -726,22 +726,11 @@ router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req
             ffmpeg()
               .input(imagePath)
               .inputOptions(['-loop', '1', '-framerate', '30'])
-              .input('anullsrc=channel_layout=stereo:sample_rate=44100')
-              .inputOptions(['-f', 'lavfi', '-t', String(imageVideoDuration)])
-              .videoFilters([
-                `scale=${VIDEO_WIDTH}:${scaledHeight}:force_original_aspect_ratio=decrease`,
-                `pad=${VIDEO_WIDTH}:${scaledHeight}:(ow-iw)/2:(oh-ih)/2:color=black`,
-                `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:0:${cropYExpression}`,
-                'setsar=1',
-              ])
+              .inputOptions(['-vf', `"crop=w=${VIDEO_WIDTH}:h=${VIDEO_HEIGHT}:x=0:y='t*100',fps=30"`])
+              .inputOptions(['-t', String(imageVideoDuration)])
               .videoCodec('libx264')
-              .audioCodec('aac')
               .outputOptions([
-                '-pix_fmt', 'yuv420p',
-                '-r', '30',
-                '-shortest',
-                '-map', '0:v:0',
-                '-map', '1:a:0',
+                '-pix_fmt', 'yuv420p'
               ])
               .on('start', (commandLine) => {
                 console.log(`[generate/video-9-16] Creating scroll video for image ${i + 1}: ${commandLine}`);
