@@ -7,6 +7,7 @@ const { downloadAudio, downloadImage, downloadSrt } = require('../utils/download
 const { getFileExtension, getImageExtension } = require('../utils/fileUtils');
 const { parseColorForFFmpeg } = require('../utils/colorUtils');
 const { normalizeUrl } = require('../utils/urlUtils');
+const axios = require('axios');
 
 const router = express.Router();
 
@@ -343,6 +344,613 @@ router.post('/convert/audio-to-video', express.json({ limit: '50mb' }), async (r
       }
     } catch (e) {
       console.warn('[convert/audio-to-video] Failed to cleanup temp files:', e);
+    }
+  }
+});
+
+/**
+ * 下载视频文件
+ * @param {string} url - 视频文件URL
+ * @param {string} filePath - 保存路径
+ */
+async function downloadVideo(url, filePath) {
+  try {
+    url = normalizeUrl(url);
+    const response = await axios({
+      method: 'GET',
+      url: url,
+      responseType: 'stream',
+      timeout: 120000, // 120秒超时
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+    });
+
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+      response.data.on('error', reject);
+    });
+  } catch (err) {
+    throw new Error(`Failed to download video from ${url}: ${err.message}`);
+  }
+}
+
+/**
+ * 获取视频文件时长（秒）
+ * @param {string} filePath - 视频文件路径
+ * @returns {Promise<number>} 视频时长（秒）
+ */
+function getVideoDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      const duration = metadata.format.duration || 0;
+      resolve(duration);
+    });
+  });
+}
+
+/**
+ * 获取图片尺寸
+ * @param {string} filePath - 图片文件路径
+ * @returns {Promise<{width: number, height: number}>} 图片尺寸
+ */
+function getImageDimensions(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      const stream = metadata.streams.find(s => s.width && s.height);
+      if (!stream) {
+        reject(new Error('Could not find image dimensions'));
+        return;
+      }
+      resolve({
+        width: stream.width,
+        height: stream.height,
+      });
+    });
+  });
+}
+
+/**
+ * 生成9:16的指定时长视频
+ * POST /generate/video-9-16
+ * 
+ * 输入：
+ * - targetDuration: 目标时长（秒）
+ * - imageUrls: 图片URL数组
+ * - videoUrls: 视频URL数组
+ * 
+ * 输出：
+ * - url: 视频文件URL
+ * - path: 本地路径
+ * - duration: 视频实际时长
+ */
+router.post('/generate/video-9-16', express.json({ limit: '100mb' }), async (req, res) => {
+  let { targetDuration, imageUrls = [], videoUrls = [] } = req.body || {};
+
+  // 参数验证
+  if (typeof targetDuration !== 'number' || targetDuration <= 0) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: 'targetDuration (number > 0) is required in request body',
+    });
+  }
+
+  if (!Array.isArray(imageUrls)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: 'imageUrls must be an array',
+    });
+  }
+
+  if (!Array.isArray(videoUrls)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: 'videoUrls must be an array',
+    });
+  }
+
+  if (imageUrls.length === 0 && videoUrls.length === 0) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: 'At least one of imageUrls or videoUrls must be provided',
+    });
+  }
+
+  // URL处理
+  imageUrls = imageUrls.map(url => normalizeUrl(url)).filter(url => url);
+  videoUrls = videoUrls.map(url => normalizeUrl(url)).filter(url => url);
+
+  const tempDir = path.join(os.tmpdir(), `video-9-16-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const outputDir = path.join(__dirname, '..', 'public', 'videos');
+  let outputFilePath = null;
+  const tempFiles = [];
+
+  try {
+    // 创建临时目录和输出目录
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    await fs.promises.mkdir(outputDir, { recursive: true });
+
+    console.log(`[generate/video-9-16] Starting generation, targetDuration: ${targetDuration}s, videoUrls: ${videoUrls.length}, imageUrls: ${imageUrls.length}`);
+
+    const VIDEO_WIDTH = 1080;
+    const VIDEO_HEIGHT = 1920;
+    const processedVideoFiles = [];
+
+    // 步骤1: 处理视频URL，拼接视频
+    if (videoUrls.length > 0) {
+      console.log(`[generate/video-9-16] Processing ${videoUrls.length} videos...`);
+      
+      // 下载所有视频
+      const downloadedVideoFiles = [];
+      for (let i = 0; i < videoUrls.length; i++) {
+        const videoUrl = videoUrls[i];
+        const videoExt = getFileExtension(videoUrl) || 'mp4';
+        const videoFileName = `video-${i}-${Date.now()}.${videoExt}`;
+        const videoFilePath = path.join(tempDir, videoFileName);
+        await downloadVideo(videoUrl, videoFilePath);
+        downloadedVideoFiles.push(videoFilePath);
+        tempFiles.push(videoFilePath);
+        console.log(`[generate/video-9-16] Downloaded video ${i + 1}/${videoUrls.length}: ${videoFilePath}`);
+      }
+
+      // 处理每个视频：转换为9:16，并获取时长
+      const processedVideos = [];
+      let totalVideoDuration = 0;
+
+      for (let i = 0; i < downloadedVideoFiles.length; i++) {
+        const videoPath = downloadedVideoFiles[i];
+        const duration = await getVideoDuration(videoPath);
+        console.log(`[generate/video-9-16] Video ${i + 1} duration: ${duration.toFixed(2)}s`);
+
+        // 转换为9:16格式
+        const processedVideoPath = path.join(tempDir, `processed-video-${i}-${Date.now()}.mp4`);
+        await new Promise((resolve, reject) => {
+          ffmpeg(videoPath)
+            .videoFilters([
+              `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease`,
+              `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black`,
+              'setsar=1',
+            ])
+            .videoCodec('libx264')
+            .outputOptions([
+              '-pix_fmt', 'yuv420p',
+              '-r', '30',
+              '-map', '0:v:0', // 映射视频流
+              '-map', '0:a?',  // 可选音频流（如果存在）
+            ])
+            .audioCodec('aac') // 统一使用aac编码，如果原视频没有音频则会被忽略
+            .on('start', (commandLine) => {
+              console.log(`[generate/video-9-16] Processing video ${i + 1}: ${commandLine}`);
+            })
+            .on('end', () => {
+              console.log(`[generate/video-9-16] Processed video ${i + 1}: ${processedVideoPath}`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`[generate/video-9-16] Error processing video ${i + 1}:`, err);
+              reject(err);
+            })
+            .save(processedVideoPath);
+        });
+
+        processedVideos.push({
+          path: processedVideoPath,
+          duration: duration,
+        });
+        tempFiles.push(processedVideoPath);
+        totalVideoDuration += duration;
+
+        // 如果累计时长已经达到或超过目标时长，停止处理
+        if (totalVideoDuration >= targetDuration) {
+          console.log(`[generate/video-9-16] Total video duration (${totalVideoDuration.toFixed(2)}s) reached target duration`);
+          break;
+        }
+      }
+
+      // 拼接所有处理后的视频
+      if (processedVideos.length > 0) {
+        const fileListPath = path.join(tempDir, 'video-list.txt');
+        const fileListContent = processedVideos
+          .map(v => `file '${v.path.replace(/'/g, "'\\''")}'`)
+          .join('\n');
+        await fs.promises.writeFile(fileListPath, fileListContent, 'utf8');
+        tempFiles.push(fileListPath);
+
+        const concatenatedVideoPath = path.join(tempDir, `concatenated-videos-${Date.now()}.mp4`);
+        await new Promise((resolve, reject) => {
+          ffmpeg()
+            .input(fileListPath)
+            .inputOptions(['-f', 'concat', '-safe', '0'])
+            .videoCodec('libx264')
+            .audioCodec('aac')
+            .outputOptions(['-pix_fmt', 'yuv420p', '-r', '30'])
+            .on('start', (commandLine) => {
+              console.log(`[generate/video-9-16] Concatenating videos: ${commandLine}`);
+            })
+            .on('end', () => {
+              console.log(`[generate/video-9-16] Videos concatenated: ${concatenatedVideoPath}`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`[generate/video-9-16] Error concatenating videos:`, err);
+              reject(err);
+            })
+            .save(concatenatedVideoPath);
+        });
+
+        tempFiles.push(concatenatedVideoPath);
+
+        // 检查拼接后的视频时长，如果超过目标时长则截取
+        const concatenatedDuration = await getVideoDuration(concatenatedVideoPath);
+        console.log(`[generate/video-9-16] Concatenated video duration: ${concatenatedDuration.toFixed(2)}s`);
+
+        if (concatenatedDuration > targetDuration) {
+          // 截取到目标时长
+          const trimmedVideoPath = path.join(tempDir, `trimmed-videos-${Date.now()}.mp4`);
+          await new Promise((resolve, reject) => {
+            ffmpeg(concatenatedVideoPath)
+              .setDuration(targetDuration)
+              .videoCodec('libx264')
+              .audioCodec('aac')
+              .outputOptions(['-pix_fmt', 'yuv420p'])
+              .on('start', (commandLine) => {
+                console.log(`[generate/video-9-16] Trimming video: ${commandLine}`);
+              })
+              .on('end', () => {
+                console.log(`[generate/video-9-16] Video trimmed: ${trimmedVideoPath}`);
+                resolve();
+              })
+              .on('error', (err) => {
+                console.error(`[generate/video-9-16] Error trimming video:`, err);
+                reject(err);
+              })
+              .save(trimmedVideoPath);
+          });
+          processedVideoFiles.push(trimmedVideoPath);
+          tempFiles.push(trimmedVideoPath);
+        } else {
+          processedVideoFiles.push(concatenatedVideoPath);
+        }
+      }
+    }
+
+    // 步骤2: 如果视频时长未达到目标时长，处理图片
+    let currentDuration = 0;
+    if (processedVideoFiles.length > 0) {
+      const firstVideoDuration = await getVideoDuration(processedVideoFiles[0]);
+      currentDuration = firstVideoDuration;
+    }
+
+    const remainingDuration = targetDuration - currentDuration;
+    console.log(`[generate/video-9-16] Current duration: ${currentDuration.toFixed(2)}s, Remaining: ${remainingDuration.toFixed(2)}s`);
+
+    if (remainingDuration > 0 && imageUrls.length > 0) {
+      console.log(`[generate/video-9-16] Processing images to fill remaining duration...`);
+
+      // 下载所有图片
+      const downloadedImageFiles = [];
+      for (let i = 0; i < imageUrls.length; i++) {
+        const imageUrl = imageUrls[i];
+        const imageExt = getImageExtension(imageUrl) || 'jpg';
+        const imageFileName = `image-${i}-${Date.now()}.${imageExt}`;
+        const imageFilePath = path.join(tempDir, imageFileName);
+        try {
+          await downloadImage(imageUrl, imageFilePath);
+          downloadedImageFiles.push(imageFilePath);
+          tempFiles.push(imageFilePath);
+          console.log(`[generate/video-9-16] Downloaded image ${i + 1}/${imageUrls.length}: ${imageFilePath}`);
+        } catch (err) {
+          console.warn(`[generate/video-9-16] Failed to download image ${i + 1}:`, err);
+        }
+      }
+
+      // 过滤图片：丢弃宽度或高度小于500的图片
+      const validImages = [];
+      for (let i = 0; i < downloadedImageFiles.length; i++) {
+        const imagePath = downloadedImageFiles[i];
+        try {
+          const dimensions = await getImageDimensions(imagePath);
+          if (dimensions.width >= 500 && dimensions.height >= 500) {
+            validImages.push({
+              path: imagePath,
+              width: dimensions.width,
+              height: dimensions.height,
+            });
+            console.log(`[generate/video-9-16] Image ${i + 1} valid: ${dimensions.width}x${dimensions.height}`);
+          } else {
+            console.log(`[generate/video-9-16] Image ${i + 1} discarded: ${dimensions.width}x${dimensions.height} (too small)`);
+          }
+        } catch (err) {
+          console.warn(`[generate/video-9-16] Failed to get dimensions for image ${i + 1}:`, err);
+        }
+      }
+
+      // 处理每个有效图片：等比缩放为宽度1080，生成视频
+      const imageVideoFiles = [];
+      let accumulatedDuration = 0;
+
+      for (let i = 0; i < validImages.length; i++) {
+        const image = validImages[i];
+        const imagePath = image.path;
+
+        // 计算缩放后的高度
+        const scaleRatio = VIDEO_WIDTH / image.width;
+        const scaledHeight = Math.round(image.height * scaleRatio);
+
+        let imageVideoPath;
+        let imageVideoDuration;
+
+        if (scaledHeight > VIDEO_HEIGHT) {
+          // 高度超过1920，制作向下滚动视频
+          // 滚动速度：假设滚动到底需要的时间为 (scaledHeight - VIDEO_HEIGHT) / 100 秒（每100像素1秒）
+          const scrollDistance = scaledHeight - VIDEO_HEIGHT;
+          const scrollDuration = Math.max(3, scrollDistance / 100); // 至少3秒
+          imageVideoDuration = scrollDuration;
+
+          // 如果累计时长加上这个视频时长会超过剩余时长，调整滚动时长
+          if (accumulatedDuration + imageVideoDuration > remainingDuration) {
+            imageVideoDuration = Math.max(1, remainingDuration - accumulatedDuration);
+          }
+
+          imageVideoPath = path.join(tempDir, `image-video-scroll-${i}-${Date.now()}.mp4`);
+          await new Promise((resolve, reject) => {
+            // 创建滚动视频：从顶部滚动到底部
+            // 计算滚动速度：从y=0滚动到y=scrollDistance，用时imageVideoDuration秒
+            const scrollSpeed = scrollDistance / imageVideoDuration; // 像素/秒
+            
+            // 使用crop滤镜实现滚动：y坐标从0开始，随时间增加，最大为scrollDistance
+            // FFmpeg表达式：使用if(gte(...), max, calculated)来限制最大值
+            const cropYExpression = `if(gte(t*${scrollSpeed}\\,${scrollDistance})\\,${scrollDistance}\\,t*${scrollSpeed})`;
+
+            ffmpeg()
+              .input(imagePath)
+              .inputOptions(['-loop', '1', '-framerate', '30'])
+              .input('anullsrc=channel_layout=stereo:sample_rate=44100')
+              .inputOptions(['-f', 'lavfi', '-t', String(imageVideoDuration)])
+              .videoFilters([
+                `scale=${VIDEO_WIDTH}:${scaledHeight}:force_original_aspect_ratio=decrease`,
+                `pad=${VIDEO_WIDTH}:${scaledHeight}:(ow-iw)/2:(oh-ih)/2:color=black`,
+                `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:0:${cropYExpression}`,
+                'setsar=1',
+              ])
+              .videoCodec('libx264')
+              .audioCodec('aac')
+              .outputOptions([
+                '-pix_fmt', 'yuv420p',
+                '-r', '30',
+                '-shortest',
+                '-map', '0:v:0',
+                '-map', '1:a:0',
+              ])
+              .on('start', (commandLine) => {
+                console.log(`[generate/video-9-16] Creating scroll video for image ${i + 1}: ${commandLine}`);
+              })
+              .on('end', () => {
+                console.log(`[generate/video-9-16] Scroll video created for image ${i + 1}: ${imageVideoPath}`);
+                resolve();
+              })
+              .on('error', (err) => {
+                console.error(`[generate/video-9-16] Error creating scroll video for image ${i + 1}:`, err);
+                reject(err);
+              })
+              .save(imageVideoPath);
+          });
+        } else {
+          // 高度不超过1920，制作停留5秒的视频
+          imageVideoDuration = 5;
+
+          // 如果累计时长加上这个视频时长会超过剩余时长，调整时长
+          if (accumulatedDuration + imageVideoDuration > remainingDuration) {
+            imageVideoDuration = Math.max(1, remainingDuration - accumulatedDuration);
+          }
+
+          imageVideoPath = path.join(tempDir, `image-video-static-${i}-${Date.now()}.mp4`);
+          await new Promise((resolve, reject) => {
+            ffmpeg()
+              .input(imagePath)
+              .inputOptions(['-loop', '1', '-framerate', '30'])
+              .input('anullsrc=channel_layout=stereo:sample_rate=44100')
+              .inputOptions(['-f', 'lavfi', '-t', String(imageVideoDuration)])
+              .videoFilters([
+                `scale=${VIDEO_WIDTH}:${scaledHeight}:force_original_aspect_ratio=decrease`,
+                `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black`,
+                'setsar=1',
+              ])
+              .videoCodec('libx264')
+              .audioCodec('aac')
+              .outputOptions([
+                '-pix_fmt', 'yuv420p',
+                '-r', '30',
+                '-shortest',
+                '-map', '0:v:0',
+                '-map', '1:a:0',
+              ])
+              .on('start', (commandLine) => {
+                console.log(`[generate/video-9-16] Creating static video for image ${i + 1}: ${commandLine}`);
+              })
+              .on('end', () => {
+                console.log(`[generate/video-9-16] Static video created for image ${i + 1}: ${imageVideoPath}`);
+                resolve();
+              })
+              .on('error', (err) => {
+                console.error(`[generate/video-9-16] Error creating static video for image ${i + 1}:`, err);
+                reject(err);
+              })
+              .save(imageVideoPath);
+          });
+        }
+
+        imageVideoFiles.push(imageVideoPath);
+        tempFiles.push(imageVideoPath);
+        accumulatedDuration += imageVideoDuration;
+
+        console.log(`[generate/video-9-16] Image ${i + 1} video duration: ${imageVideoDuration.toFixed(2)}s, Total: ${accumulatedDuration.toFixed(2)}s`);
+
+        // 如果累计时长已经达到或超过剩余时长，停止处理
+        if (accumulatedDuration >= remainingDuration) {
+          console.log(`[generate/video-9-16] Image videos duration (${accumulatedDuration.toFixed(2)}s) reached remaining duration`);
+          break;
+        }
+      }
+
+      processedVideoFiles.push(...imageVideoFiles);
+    }
+
+    // 步骤3: 拼接所有视频（视频拼接的视频 + 图片生成的视频）
+    if (processedVideoFiles.length === 0) {
+      return res.status(400).json({
+        error: 'no_video_generated',
+        message: 'No video was generated from the provided inputs',
+      });
+    }
+
+    console.log(`[generate/video-9-16] Final concatenating ${processedVideoFiles.length} video segments...`);
+
+    const finalFileListPath = path.join(tempDir, 'final-list.txt');
+    const finalFileListContent = processedVideoFiles
+      .map(v => `file '${v.replace(/'/g, "'\\''")}'`)
+      .join('\n');
+    await fs.promises.writeFile(finalFileListPath, finalFileListContent, 'utf8');
+    tempFiles.push(finalFileListPath);
+
+    // 生成输出文件名
+    const outputFileName = `video-9-16-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
+    outputFilePath = path.join(outputDir, outputFileName);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(finalFileListPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions(['-pix_fmt', 'yuv420p', '-r', '30'])
+        .on('start', (commandLine) => {
+          console.log(`[generate/video-9-16] Final concatenation: ${commandLine}`);
+        })
+        .on('progress', (progress) => {
+          console.log(`[generate/video-9-16] Processing: ${JSON.stringify(progress)}`);
+        })
+        .on('end', () => {
+          console.log(`[generate/video-9-16] Final video created: ${outputFilePath}`);
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error(`[generate/video-9-16] Error in final concatenation:`, err);
+          reject(err);
+        })
+        .save(outputFilePath);
+    });
+
+    // 获取最终视频的实际时长
+    const finalDuration = await getVideoDuration(outputFilePath);
+    console.log(`[generate/video-9-16] Final video duration: ${finalDuration.toFixed(2)}s`);
+
+    // 如果最终视频时长超过目标时长，截取到目标时长
+    if (finalDuration > targetDuration) {
+      const trimmedOutputPath = path.join(tempDir, `final-trimmed-${Date.now()}.mp4`);
+      await new Promise((resolve, reject) => {
+        ffmpeg(outputFilePath)
+          .setDuration(targetDuration)
+          .videoCodec('libx264')
+          .audioCodec('aac')
+          .outputOptions(['-pix_fmt', 'yuv420p'])
+          .on('start', (commandLine) => {
+            console.log(`[generate/video-9-16] Final trimming: ${commandLine}`);
+          })
+          .on('end', () => {
+            console.log(`[generate/video-9-16] Final video trimmed: ${trimmedOutputPath}`);
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error(`[generate/video-9-16] Error in final trimming:`, err);
+            reject(err);
+          })
+          .save(trimmedOutputPath);
+      });
+
+      // 替换输出文件
+      await fs.promises.unlink(outputFilePath);
+      await fs.promises.rename(trimmedOutputPath, outputFilePath);
+      tempFiles.push(trimmedOutputPath);
+    }
+
+    // 获取最终的实际时长
+    const actualDuration = await getVideoDuration(outputFilePath);
+
+    // 构造可访问的URL
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const relativePath = path.relative(path.join(__dirname, '..', 'public'), outputFilePath);
+    const urlPath = `/static/${relativePath.split(path.sep).join('/')}`;
+    const videoUrl = `${baseUrl}${urlPath}`;
+
+    console.log(`[generate/video-9-16] Generation successful, URL: ${videoUrl}, Duration: ${actualDuration.toFixed(2)}s`);
+
+    return res.json({
+      success: true,
+      url: videoUrl,
+      path: outputFilePath,
+      duration: parseFloat(actualDuration.toFixed(2)),
+      targetDuration: targetDuration,
+    });
+  } catch (err) {
+    console.error('[generate/video-9-16] Generation error:', err);
+
+    if (outputFilePath) {
+      try {
+        await fs.promises.unlink(outputFilePath);
+      } catch (e) {
+        console.warn('[generate/video-9-16] Failed to cleanup output file:', e);
+      }
+    }
+
+    return res.status(500).json({
+      error: 'generation_failed',
+      message: err && err.message ? err.message : String(err),
+    });
+  } finally {
+    // 清理临时文件
+    try {
+      for (const file of tempFiles) {
+        try {
+          if (fs.existsSync(file)) {
+            await fs.promises.unlink(file);
+          }
+        } catch (e) {
+          console.warn(`[generate/video-9-16] Failed to delete temp file ${file}:`, e);
+        }
+      }
+      // 删除临时目录
+      try {
+        if (fs.existsSync(tempDir)) {
+          await fs.promises.rmdir(tempDir);
+          console.log(`[generate/video-9-16] Cleaned up temp directory: ${tempDir}`);
+        }
+      } catch (e) {
+        if (fs.promises.rm) {
+          try {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+            console.log(`[generate/video-9-16] Cleaned up temp directory (recursive): ${tempDir}`);
+          } catch (rmErr) {
+            console.warn(`[generate/video-9-16] Failed to remove temp directory: ${tempDir}`, rmErr);
+          }
+        } else {
+          console.warn(`[generate/video-9-16] Failed to remove temp directory: ${tempDir}`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('[generate/video-9-16] Failed to cleanup temp files:', e);
     }
   }
 });

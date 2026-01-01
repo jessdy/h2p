@@ -44,6 +44,7 @@ app.get('/', (req, res) => {
       crawl: 'POST /crawl/aibase',
       mergeAudio: 'POST /merge/audio',
       audioToVideo: 'POST /convert/audio-to-video',
+      generateVideo916: 'POST /generate/video-9-16',
       loginValidate: 'POST /login/validate',
       loginPlatforms: 'GET /login/platforms',
       loginPlatform: 'GET /login/platform/:platform',
