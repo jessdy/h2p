@@ -238,6 +238,112 @@
         }
       }
     },
+    "/render/url-screenshot": {
+      "post": {
+        "tags": ["render"],
+        "summary": "Screenshot URL",
+        "description": "Takes a screenshot of a webpage URL with configurable screen width and full-page scrolling support",
+        "operationId": "urlScreenshot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UrlScreenshotRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic URL screenshot",
+                  "value": {
+                    "url": "https://example.com",
+                    "width": 1920,
+                    "fullPage": true
+                  }
+                },
+                "mobile_width": {
+                  "summary": "Mobile width screenshot",
+                  "value": {
+                    "url": "https://example.com",
+                    "width": 390,
+                    "fullPage": true,
+                    "type": "png"
+                  }
+                },
+                "jpeg_quality": {
+                  "summary": "JPEG with custom quality",
+                  "value": {
+                    "url": "https://example.com",
+                    "width": 1920,
+                    "fullPage": true,
+                    "type": "jpeg",
+                    "quality": 90
+                  }
+                },
+                "base64_output": {
+                  "summary": "Base64 encoded output",
+                  "value": {
+                    "url": "https://example.com",
+                    "width": 1920,
+                    "fullPage": true,
+                    "encoding": "base64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Screenshot taken successfully",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "PNG image binary data"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "JPEG image binary data"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/UrlScreenshotBase64Response" },
+                    { "$ref": "#/components/schemas/UrlScreenshotUrlResponse" }
+                  ]
+                },
+                "description": "JSON responses for base64 or URL encoding"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Screenshot failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/merge/audio": {
       "post": {
         "tags": ["audio"],
@@ -327,6 +433,93 @@
           },
           "500": {
             "description": "Conversion failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate/video-9-16": {
+      "post": {
+        "tags": ["video"],
+        "summary": "Generate 9:16 video",
+        "description": "Generates a 9:16 (1080x1920) video with specified duration by concatenating videos and converting images to videos. Videos are concatenated first, and if the duration is less than target, images are converted to videos to fill the remaining time.",
+        "operationId": "generateVideo916",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateVideo916Request"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic video generation with videos and images",
+                  "value": {
+                    "targetDuration": 60,
+                    "videoUrls": [
+                      "https://example.com/video1.mp4",
+                      "https://example.com/video2.mp4"
+                    ],
+                    "imageUrls": [
+                      "https://example.com/image1.jpg",
+                      "https://example.com/image2.jpg"
+                    ]
+                  }
+                },
+                "videos_only": {
+                  "summary": "Videos only",
+                  "value": {
+                    "targetDuration": 30,
+                    "videoUrls": [
+                      "https://example.com/video1.mp4"
+                    ],
+                    "imageUrls": []
+                  }
+                },
+                "images_only": {
+                  "summary": "Images only",
+                  "value": {
+                    "targetDuration": 20,
+                    "videoUrls": [],
+                    "imageUrls": [
+                      "https://example.com/image1.jpg",
+                      "https://example.com/image2.jpg"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateVideo916Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Video generation failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -1766,6 +1959,200 @@
           }
         },
         "required": ["success", "message", "title", "videoUrl", "publishedAt"]
+      },
+      "UrlScreenshotRequest": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL of the webpage to screenshot",
+            "example": "https://example.com"
+          },
+          "width": {
+            "type": "integer",
+            "default": 1920,
+            "description": "Screen width in pixels",
+            "minimum": 320,
+            "maximum": 3840
+          },
+          "fullPage": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to take a full-page screenshot (scrolls and captures entire page)"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["png", "jpeg"],
+            "default": "png",
+            "description": "Image format"
+          },
+          "quality": {
+            "type": "integer",
+            "default": 80,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "JPEG quality (0-100, only applies to JPEG format)"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["binary", "base64", "url"],
+            "default": "url",
+            "description": "Output encoding format"
+          },
+          "waitUntil": {
+            "type": "string",
+            "enum": ["load", "domcontentloaded", "networkidle0", "networkidle2"],
+            "default": "networkidle0",
+            "description": "When to consider navigation succeeded"
+          },
+          "timeout": {
+            "type": "integer",
+            "default": 30000,
+            "minimum": 5000,
+            "maximum": 300000,
+            "description": "Navigation timeout in milliseconds"
+          },
+          "outputDir": {
+            "type": "string",
+            "description": "Output directory (only applies when encoding='url')"
+          },
+          "outputName": {
+            "type": "string",
+            "description": "Output filename without extension (only applies when encoding='url')"
+          }
+        }
+      },
+      "UrlScreenshotBase64Response": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"]
+          },
+          "data": {
+            "type": "string",
+            "description": "Base64 encoded image data"
+          },
+          "type": {
+            "type": "string",
+            "description": "Image format (png or jpeg)"
+          },
+          "url": {
+            "type": "string",
+            "description": "Source URL that was screenshot"
+          },
+          "width": {
+            "type": "integer",
+            "description": "Screenshot width"
+          },
+          "fullPage": {
+            "type": "boolean",
+            "description": "Whether full-page screenshot was taken"
+          }
+        },
+        "required": ["success", "encoding", "data", "type", "url", "width", "fullPage"]
+      },
+      "UrlScreenshotUrlResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["url"]
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL to access the screenshot"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local file path"
+          },
+          "type": {
+            "type": "string",
+            "description": "Image format (png or jpeg)"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Output filename"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "description": "Source URL that was screenshot"
+          },
+          "width": {
+            "type": "integer",
+            "description": "Screenshot width"
+          },
+          "fullPage": {
+            "type": "boolean",
+            "description": "Whether full-page screenshot was taken"
+          }
+        },
+        "required": ["success", "encoding", "url", "path", "type", "filename", "sourceUrl", "width", "fullPage"]
+      },
+      "GenerateVideo916Request": {
+        "type": "object",
+        "required": ["targetDuration"],
+        "properties": {
+          "targetDuration": {
+            "type": "number",
+            "description": "Target video duration in seconds",
+            "minimum": 1,
+            "maximum": 3600,
+            "example": 60
+          },
+          "imageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Array of image URLs to convert to videos (images with width or height < 500px will be discarded)"
+          },
+          "videoUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Array of video URLs to concatenate"
+          }
+        }
+      },
+      "GenerateVideo916Response": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the generation was successful"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL to access the generated video"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local file path of the generated video"
+          },
+          "duration": {
+            "type": "number",
+            "description": "Actual video duration in seconds",
+            "example": 58.5
+          },
+          "targetDuration": {
+            "type": "number",
+            "description": "Target video duration in seconds",
+            "example": 60
+          }
+        },
+        "required": ["success", "url", "path", "duration", "targetDuration"]
       }
     }
   },
